@@ -10,3 +10,4 @@ mahakaal
 har har
 trikal
 Sankar
+Jai  Ho
