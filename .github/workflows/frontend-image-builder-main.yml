@@ -2,7 +2,7 @@ name: fe-buildandpush-main
 
 on:
   repository_dispatch:
-    types: [fe-buildandpush-development]
+    types: ["fe-buildandpush-development"]
   push:
     branches:
       - main
