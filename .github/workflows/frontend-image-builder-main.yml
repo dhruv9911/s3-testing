@@ -1,16 +1,13 @@
 name: fe-buildandpush-main
 
 on:
-#  repository_dispatch:
-#    types: [fe-buildandpush-development]
-  push:
-    branches:
-      - main
-    workflow_run:
-    workflows: ["fe-buildandpush-development"]
-    branches: [main]
-    types:
-      - completed
+  repository_dispatch:
+    types: [fe-buildandpush-development]
+
+#    workflow_run:
+#    workflows: ["fe-buildandpush-development"]
+#    types:
+#      - completed
 
 jobs:
   build-react-app:
@@ -21,6 +18,9 @@ jobs:
         uses: lewagon/wait-on-check-action@v1.0.0
         with:
           ref: ${{ github.ref }}
-          check-name: 'fe-buildandpush-development'
+          check-name: fe-buildandpush-development
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10
+      - name: Checkout Source code
+        id: checkout-code
+        uses: actions/checkout@v2
