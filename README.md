@@ -9,3 +9,4 @@ sambhu
 mahakaal
 har har
 trikal
+Sankar
