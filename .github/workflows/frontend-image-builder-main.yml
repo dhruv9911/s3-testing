@@ -1,13 +1,15 @@
 name: fe-buildandpush-main
 
 on:
+  repository_dispatch:
+    types: [fe-buildandpush-development]
   push:
     branches:
       - main
-    workflow_run:
-    workflows: ["fe-buildandpush-development"]
-    types:
-      - completed
+#    workflow_run:
+#    workflows: ["fe-buildandpush-development"]
+#    types:
+#      - completed
 
 jobs:
   build-react-app:
@@ -17,4 +19,3 @@ jobs:
       - name: Checkout Source code
         id: checkout-code
         uses: actions/checkout@v2
- 
