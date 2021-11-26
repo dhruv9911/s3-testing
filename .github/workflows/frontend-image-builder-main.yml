@@ -1,8 +1,7 @@
 name: fe-buildandpush-main
 
 on:
-  repository_dispatch:
-    types: [build_success]
+  push
 
 #    workflow_run:
 #    workflows: ["fe-buildandpush-development"]
