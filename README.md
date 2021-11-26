@@ -8,3 +8,4 @@ mahadev
 sambhu
 mahakaal
 har har
+trikal
