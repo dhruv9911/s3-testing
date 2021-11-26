@@ -3,9 +3,9 @@ name: fe-buildandpush-main
 on:
 #  repository_dispatch:
 #    types: [fe-buildandpush-development]
-#  push:
-#    branches:
-#      - main
+  push:
+    branches:
+      - main
     workflow_run:
     workflows: ["fe-buildandpush-development"]
     branches: [main]
