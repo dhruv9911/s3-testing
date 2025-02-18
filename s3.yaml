@@ -3,25 +3,31 @@ Description: 'CloudFormation template to create an S3 bucket with parameterized 
 
 Parameters:
   BucketName:
-    Type: String
-    Description: 'The name of the S3 bucket'
-    Default: demo-s3-bucket-using-pipeline-code
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /my/app/BucketName
+    # Type: String
+    # Description: 'The name of the S3 bucket'
+    # Default: demo-s3-bucket-using-pipeline-code
   AccessControl:
-    Type: String
-    Default: Private
-    AllowedValues:
-      - Private
-      - PublicRead
-      - PublicReadWrite
-      - AuthenticatedRead
-    Description: 'S3 bucket access control setting'
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /my/app/AccessControl
+    # Type: String
+    # Default: Private
+    # AllowedValues:
+    #   - Private
+    #   - PublicRead
+    #   - PublicReadWrite
+    #   - AuthenticatedRead
+    # Description: 'S3 bucket access control setting'
   EnableVersioning:
-    Type: String
-    Default: 'false'
-    AllowedValues:
-      - 'true'
-      - 'false'
-    Description: 'Enable or disable versioning for the S3 bucket'
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /my/app/EnableVersioning
+    # Type: String
+    # Default: 'false'
+    # AllowedValues:
+    #   - 'true'
+    #   - 'false'
+    # Description: 'Enable or disable versioning for the S3 bucket'
 
 Resources:
   S3Bucket:
