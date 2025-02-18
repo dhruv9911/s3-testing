@@ -1,0 +1,13 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+  build:
+    commands:
+      - echo "Building the CloudFormation template"
+      - aws cloudformation validate-template --template-body file://*.yaml
+artifacts:
+  files:
+    - *.yaml
