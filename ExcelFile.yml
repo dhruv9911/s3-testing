@@ -1,0 +1,280 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for creating CodePipeline with Lambda function to fetch parameters from Excel in S3 and deploy a CloudFormation stack.
+
+Parameters:
+  GitHubRepoOwner:
+    Type: String
+    Description: 'GitHub repository owner name'
+    Default: dhruv9911
+  GitHubRepoName:
+    Type: String
+    Description: 'GitHub repository name'
+    Default: s3-testing
+  GitHubBranchName:
+    Type: String
+    Default: 'main'
+    Description: 'GitHub branch name'
+  GitHubOAuthToken:
+    Type: String
+    NoEcho: true
+    Description: 'GitHub OAuth token for accessing the repository'    ###### GiTHub token passed using AWS-CLI while create Cloudfomation Stack #####################
+  CloudFormationStackName:
+    Type: String
+    Description: 'Name of the CloudFormation stack to be created'
+    Default: 'ci-cd-org'
+  ArtifactBucketName:
+    Type: String
+    Description: 'S3 bucket for storing artifacts'
+    Default: 'aws-organization-creation-cloudformation-code-bucket'  ### In This Bucket Pipeline Artifact store and Same Bucket used for store User-Input.csv (MS-DOS) File format only)
+  S3BucketName:
+    Type: String
+    Description: 'S3 bucket where the Excel file is stored'
+    Default: 'aws-organization-creation-cloudformation-code-bucket'   ###Same Bucket used for store User-Input.csv (MS-DOS) File format only###
+  ExcelFileKey:
+    Type: String
+    Description: 'Excel file name in S3 bucket'
+    Default: 'User-Input.csv'      #####  User-Input.csv (MS-DOS) File format only ####
+
+Resources:
+
+  # ✅ Lambda function to read parameters from S3 Excel file and store inside AWS Parameters Store, DO't need to provide S3 Bucket and CSv file Name into Lambda code Directly, we passed over trigger time 
+  FetchParametersLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: LambdaExecutionRole
+    Properties:
+      FunctionName: FetchAndStoreParametersInSSM
+      Runtime: python3.9  # Use an available runtime (update if needed)
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import csv
+          import io
+
+          s3_client = boto3.client('s3')
+          ssm_client = boto3.client('ssm')
+          codepipeline = boto3.client('codepipeline')
+
+          def lambda_handler(event, context):
+              try:
+                  job_id = event['CodePipeline.job']['id']
+                  user_params = json.loads(event['CodePipeline.job']['data']['actionConfiguration']['configuration']['UserParameters'])
+                  bucket_name = user_params['BucketName']        
+                  file_key = user_params['FileKey']
+
+                  response = s3_client.get_object(Bucket=bucket_name, Key=file_key)
+                  file_content = response['Body'].read().decode('utf-8')
+                  csv_reader = csv.reader(io.StringIO(file_content))
+
+                  next(csv_reader)  # Skip header row
+
+                  for row in csv_reader:
+                      ssm_client.put_parameter(
+                          Name=f"/my/app/{row[0]}",
+                          Value=row[1],
+                          Type='String',
+                          Overwrite=True
+                      )
+
+                  codepipeline.put_job_success_result(jobId=job_id)
+                  return {'statusCode': 200, 'body': 'Parameters stored successfully'}
+
+              except Exception as e:
+                  codepipeline.put_job_failure_result(jobId=job_id, failureDetails={'message': str(e), 'type': 'JobFailed'})
+                  return {'statusCode': 500, 'body': f"Failed to process: {str(e)}"}
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaS3CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 'codepipeline:PutJobSuccessResult'
+                  - '*'
+                Resource: '*'
+
+
+  # # S3 Artifact Bucket for storing pipeline artifacts
+  # ArtifactBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: !Ref ArtifactBucketName
+
+  CodeBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: 'S3BucketDeployment'
+      Source:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: 'aws/codebuild/standard:5.0'
+        Type: LINUX_CONTAINER
+      Artifacts:
+        Type: CODEPIPELINE
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+
+  CodeBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [codebuild.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                  - 'cloudformation:*'
+                  - '*'
+                Resource: '*'
+
+  CodePipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      Name: 'S3BucketPipeline'
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucketName
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              Configuration:
+                Owner: !Ref GitHubRepoOwner
+                Repo: !Ref GitHubRepoName
+                Branch: !Ref GitHubBranchName
+                OAuthToken: !Ref GitHubOAuthToken
+              OutputArtifacts:
+                - Name: SourceOutput
+              RunOrder: 1
+
+        - Name: Build
+          Actions:
+            - Name: CodeBuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+
+        - Name: Deploy
+          Actions:
+            - Name: FetchParametersFromS3
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Provider: Lambda
+                Version: '1'
+              Configuration:
+                FunctionName: !Ref FetchParametersLambda
+                UserParameters: !Sub '{"BucketName": "${S3BucketName}", "FileKey": "${ExcelFileKey}"}'    ### These value taken from Parameters Section
+              OutputArtifacts:
+                - Name: ParametersOutput
+              RunOrder: 1
+
+            - Name: DeployCloudFormation
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Ref CloudFormationStackName
+                TemplatePath: BuildOutput::s3.yaml      #################### Change Here your Cloudformation File, Which you store in GitHub Repo, exact same name ######
+                RoleArn: !GetAtt CloudFormationRole.Arn
+                Capabilities: CAPABILITY_NAMED_IAM
+              InputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 2
+
+  CodePipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [codepipeline.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                  - 'codebuild:*'
+                  - 'cloudformation:*'
+                  - '*'
+                Resource: '*'
+
+  CloudFormationRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: CloudFormationDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:CreateStack'
+                  - 'cloudformation:UpdateStack'
+                  - 'cloudformation:DeleteStack'
+                  - 's3:GetObject'
+                  - 'iam:PassRole'
+                  - '*'
+                Resource: '*'
+
+Outputs:
+  PipelineName:
+    Description: 'Name of the created CodePipeline'
+    Value: !Ref CodePipeline
